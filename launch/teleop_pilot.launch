@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!--
+  LoCO joystick teleop, single launch:
+    MAVROS (ArduPilot/ArduSub on TELEM2 -> Pi UART)  +  joy_node  +  loco_teleop/pycontroller  +  loco_pilot/pilot
+
+  Data flow:
+    /dev/input/js0 -> joy_node -> /joy -> pycontroller -> /loco/command -> pilot -> /mavros/rc/override -> Pixhawk
+
+  Usage:
+    roslaunch loco_launch teleop_pilot.launch                    # everything, auto-arms
+    roslaunch loco_launch teleop_pilot.launch auto_arm:=false    # dry run: see commands, thrusters stay off
+    roslaunch loco_launch teleop_pilot.launch launch_mavros:=false   # if MAVROS is already running elsewhere
+-->
+<launch>
+  <!-- Flight controller serial link (Pi GPIO 14/15 = /dev/ttyAMA0). Match SERIAL2_BAUD on the FC. -->
+  <arg name="fcu_url"       default="/dev/ttyAMA0:921600" />
+  <arg name="gcs_url"       default="" />
+  <arg name="launch_mavros" default="true" />
+
+  <!-- Joystick -->
+  <arg name="joy_dev"       default="/dev/input/js0" />
+  <arg name="deadzone"      default="0.1" />
+
+  <!-- Pilot behaviour -->
+  <arg name="auto_arm"      default="true" />
+  <arg name="mode"          default="STABILIZED" />
+
+  <!-- 1. MAVROS -->
+  <group if="$(arg launch_mavros)">
+    <include file="$(find mavros)/launch/apm.launch">
+      <arg name="fcu_url" value="$(arg fcu_url)" />
+      <arg name="gcs_url" value="$(arg gcs_url)" />
+    </include>
+  </group>
+
+  <!-- 2. Joystick driver -->
+  <node pkg="joy" type="joy_node" name="joy" output="screen" respawn="true">
+    <param name="dev"             value="$(arg joy_dev)" />
+    <param name="deadzone"        value="$(arg deadzone)" />
+    <param name="autorepeat_rate" value="10" />
+  </node>
+
+  <!-- 3. Joy -> loco/command -->
+  <node pkg="loco_teleop" type="pycontroller.py" name="pycontroller" output="screen" />
+
+  <!-- 4. loco/command -> mavros/rc/override (arms + sets mode on startup) -->
+  <node pkg="loco_pilot" type="pilot.py" name="pilot_base" output="screen">
+    <param name="auto_arm" value="$(arg auto_arm)" />
+    <param name="mode"     value="$(arg mode)" />
+  </node>
+</launch>
